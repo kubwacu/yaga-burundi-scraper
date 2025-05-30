@@ -1,0 +1,9 @@
+.idea
+dist
+node_modules
+storage
+
+.env
+*.py
+*.todo
+*.json
