@@ -6,4 +6,3 @@ storage
 .env
 *.py
 *.todo
-*.json
