@@ -40,7 +40,6 @@ const getArticlesMetadata = async (page: Page): Promise<ArticleMetadata[]> => {
         const titleValue = await title?.textContent();
         const categoryValue = await category?.textContent();
 
-        // Only return if all required fields are present
         if (postedAtValue && authorValue && titleValue && urlValue && categoryValue) {
           return {
             postedAt: postedAtValue,
@@ -71,13 +70,17 @@ router.addDefaultHandler(async ({ log, page }) => {
   const outputPath = getOutputPath(page);
   let has414Error = false;
 
-  // Set up request monitoring
   page.on("request", async (request) => {
     if (request.resourceType() === "xhr") {
       log.debug(`XHR Request: ${request.url()}`);
       const response = await request.response();
       const responseBody = await response?.text();
 
+      /**
+       * When clicking the "load more" button, a page number query parameter is added to the URL.
+       * This can cause issues for certain categories (like "Société") where the URL will becomes too long,
+       * after a many clicks on the "load more" button, resulting in a 414 "Request-URI Too Long" error from the server.
+       */
       if (responseBody?.includes("414 Request-URI Too Long")) {
         log.debug("Detected 414 Request-URI Too Long error!");
         log.debug(`Request URL: ${request.url()}`);
