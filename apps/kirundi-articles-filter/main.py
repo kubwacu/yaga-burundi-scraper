@@ -1,6 +1,7 @@
 import json
 import re
 import os
+import time
 
 import requests
 
@@ -12,6 +13,13 @@ from tqdm import tqdm
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 STORAGE_DIR = os.path.join(SCRIPT_DIR, 'storage')
+SYSTEM_PROMPT = """
+You are a language detection assistant. You will receive text in English, French, or Ikinyarwanda, and must 
+respond with only "english", "french", or "Ikinyarwanda". If the text is in English or French, respond accordingly. 
+If it is in Ikinyarwanda or any language other than English or French, respond with "Ikinyarwanda". 
+If the text contains both English and French, respond with either "english" or "french", but never "Ikinyarwanda". 
+Use only these exact words with no variations, explanations, or extra text.
+"""
 
 os.makedirs(STORAGE_DIR, exist_ok=True)
 
@@ -80,15 +88,7 @@ def get_article_lang(title):
   response = requests.post(ollama_url, json={
     "model": ollama_model,
     "messages": [
-      {
-        "role": "system",
-        "content": """
-You are a language detection assistant. You will receive text in English, French, or Ikinyarwanda, and must 
-respond with only "english", "french", or "Ikinyarwanda". If the text is in English or French, respond accordingly. 
-If it is in Ikinyarwanda or any language other than English or French, respond with "Ikinyarwanda". 
-If the text contains both English and French, respond with either "english" or "french", but never "Ikinyarwanda". 
-Use only these exact words with no variations, explanations, or extra text."""
-      },
+      {"role": "system", "content": SYSTEM_PROMPT},
       {"role": "user", "content": title}
     ],
     "stream": False
@@ -111,11 +111,13 @@ def save_articles(articles, filename):
     json.dump(articles, f, ensure_ascii=False, indent=4)
 
 if __name__ == "__main__":
+  start_time = time.time()
+  
   likely_kirundi_articles = get_likely_kirundi_articles()
   articles_in_kirundi = []
   articles_not_in_kirundi = []
   
-  for article in tqdm(likely_kirundi_articles, desc="Filtering articles"):
+  for article in tqdm(likely_kirundi_articles[:10], desc="Filtering articles"):
     title = article['title']
     lang = get_article_lang(title)
     if lang.lower() == "ikinyarwanda":
@@ -126,3 +128,6 @@ if __name__ == "__main__":
   timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
   save_articles(articles_in_kirundi, os.path.join(STORAGE_DIR, f'articles_in_kirundi_{timestamp}.json'))
   save_articles(articles_not_in_kirundi, os.path.join(STORAGE_DIR, f'articles_not_in_kirundi_{timestamp}.json'))
+
+  end_time = time.time()
+  print(f"Total execution time: {end_time - start_time} seconds")
