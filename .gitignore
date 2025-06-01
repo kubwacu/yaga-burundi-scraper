@@ -4,5 +4,16 @@ node_modules
 storage
 
 .env
-*.py
 *.todo
+
+summary.py
+
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.pyw
+*.pyz
+*.venv
