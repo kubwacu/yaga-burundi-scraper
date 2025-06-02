@@ -1,7 +1,8 @@
+import os
+import asyncio
+import aiohttp
 import json
 import re
-import os
-import time
 
 import requests
 
@@ -15,11 +16,13 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 STORAGE_DIR = os.path.join(SCRIPT_DIR, 'storage')
 SYSTEM_PROMPT = """
 You are a language detection assistant. You will receive text in English, French, or Ikinyarwanda, and must 
-respond with only "english", "french", or "Ikinyarwanda". If the text is in English or French, respond accordingly. 
-If it is in Ikinyarwanda or any language other than English or French, respond with "Ikinyarwanda". 
-If the text contains both English and French, respond with either "english" or "french", but never "Ikinyarwanda". 
+respond with only "english", "french", or "ikirundi". If the text is in English or French, respond accordingly. 
+If it is in Ikinyarwanda or any language other than English or French, respond with "ikirundi". 
+If the text contains both English and French, respond with either "english" or "french", but never "ikirundi". 
 Use only these exact words with no variations, explanations, or extra text.
 """
+OLLAMA_URL = "http://localhost:11434/api/chat"
+OLLAMA_MODEL = "llama3.2:3b"
 
 os.makedirs(STORAGE_DIR, exist_ok=True)
 
@@ -59,14 +62,14 @@ def get_likely_kirundi_articles():
     "qui ", "qu’", "que ", "quoi ", "quel ", "quelle ", "quels ", "quelles ",
     "comment ", "pourquoi ", "quand ", "où ", "combien ", "jusqu’", "sur ",
 
-    "je ", "j’", "tu ", "il ", "elle ", "on ", "nous ", "vous ", "ils ", "elles ",
+    "j’", "tu ", "il ", "elle ", "on ", "nous ", "vous ", "ils ", "elles ",
     "ce ", "cette ", "ces ", "ceux ", "celles ", "c’",
 
-    "après ", "avant ", "au-delà ", "aujourd'hui ", "hier ", "demain ", "là ", "ici ", "là-bas ", "là-haut ",
+    "après ", "avant ", "au-delà ", "aujourd'hui ", "hier ", "demain ", "là ", "là-bas ", "là-haut ",
 
     "en ", "dans ", "avec ", "pour ", "mais ", "donc ", "car ",
     "parce ", "lorsque ", "pendant ", "depuis ", "sans ", "et ", 
-    "à ", "au ", "aux ", "par ", "voici ", "voilà ", "ainsi ", "oui, ",
+    "à ", "au ", "aux ", "par ", "voici ", "voilà ", "ainsi ", "oui, ", "non, ",
 
     "sont ", "était ", "avait ", "ont ", "doit ", "peut ", "va ", "aller ", "faire ", "être"
   ])
@@ -110,24 +113,59 @@ def save_articles(articles, filename):
   with open(filename, 'w', encoding='utf-8') as f:
     json.dump(articles, f, ensure_ascii=False, indent=4)
 
-if __name__ == "__main__":
-  start_time = time.time()
-  
+async def get_article_lang(article, session, retries=3):
+  title = article['title']
+  payload = {
+    "model": OLLAMA_MODEL,
+    "messages": [
+      {"role": "system", "content": SYSTEM_PROMPT},
+      {"role": "user", "content": title}
+    ],
+    "stream": False
+  }
+
+  for attempt in range(retries):
+    try:
+      async with session.post(OLLAMA_URL, json=payload, timeout=60) as response:
+        if response.status != 200:
+          print(f"Error: {response.status} for title: {title}")
+          continue
+        data = await response.json()
+        lang = data.get("message", {}).get("content", "").strip().lower()
+        return article, lang
+    except Exception as e:
+      if attempt < retries - 1:
+        await asyncio.sleep(2 ** attempt)
+      else:
+        print(f"Failed to process '{title}': {e}")
+        return article, "unknown"
+
+semaphore = asyncio.Semaphore(5)
+
+async def throttled_get_lang(article, session):
+  async with semaphore:
+    return await get_article_lang(article, session)
+
+async def process_articles():
   likely_kirundi_articles = get_likely_kirundi_articles()
   articles_in_kirundi = []
   articles_not_in_kirundi = []
-  
-  for article in tqdm(likely_kirundi_articles[:10], desc="Filtering articles"):
-    title = article['title']
-    lang = get_article_lang(title)
-    if lang.lower() == "ikinyarwanda":
-      articles_in_kirundi.append(article)
-    else:
-      articles_not_in_kirundi.append(article)
+
+  connector = aiohttp.TCPConnector(limit=10)
+  async with aiohttp.ClientSession(connector=connector) as session:
+    tasks = [throttled_get_lang(article, session) for article in likely_kirundi_articles]
+    
+    for coro in tqdm(asyncio.as_completed(tasks), total=len(tasks), desc="Filtering articles"):
+      article, lang = await coro
+      if lang == "ikirundi":
+        articles_in_kirundi.append(article)
+      else:
+        articles_not_in_kirundi.append(article)
 
   timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
   save_articles(articles_in_kirundi, os.path.join(STORAGE_DIR, f'articles_in_kirundi_{timestamp}.json'))
   save_articles(articles_not_in_kirundi, os.path.join(STORAGE_DIR, f'articles_not_in_kirundi_{timestamp}.json'))
 
-  end_time = time.time()
-  print(f"Total execution time: {end_time - start_time} seconds")
+
+if __name__ == "__main__":
+  asyncio.run(process_articles())
