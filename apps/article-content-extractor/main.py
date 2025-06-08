@@ -82,7 +82,7 @@ def upload_article_content(file_path: Path, article: dict):
       'contributor_id': os.getenv('CONTRIBUTOR_ID'),
       'title': article['title'],
       'author': article.get('author'),
-      'source': article.get('source'),
+      'source': article.get('url'),
       'date': article.get('postedAt'),
       'category': article.get('category'),
     }
