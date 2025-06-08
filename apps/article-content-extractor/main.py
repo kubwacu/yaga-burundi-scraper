@@ -81,10 +81,10 @@ def upload_article_content(file_path: Path, article: dict):
     form_data = {
       'contributor_id': os.getenv('CONTRIBUTOR_ID'),
       'title': article['title'],
-      'author': article.get('author', 'Unknown'),
-      'source': article.get('source', 'Yaga Burundi'),
-      'date': datetime.now().strftime('%Y-%m-%dT%H:%M:%SZ'),
-      'category': article.get('category', 'News'),
+      'author': article.get('author'),
+      'source': article.get('source'),
+      'date': article.get('postedAt'),
+      'category': article.get('category'),
     }
 
     with open(file_path, 'rb') as f:
