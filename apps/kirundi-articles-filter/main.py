@@ -26,6 +26,8 @@ OLLAMA_MODEL = "llama3.2:3b"
 
 os.makedirs(STORAGE_DIR, exist_ok=True)
 
+semaphore = asyncio.Semaphore(5)
+
 def extract_first_unit(text):
   """
   Extract the first unit of a text.
@@ -140,8 +142,6 @@ async def get_article_lang(article, session, retries=3):
         print(f"Failed to process '{title}': {e}")
         return article, "unknown"
 
-semaphore = asyncio.Semaphore(5)
-
 async def throttled_get_lang(article, session):
   async with semaphore:
     return await get_article_lang(article, session)
@@ -165,7 +165,6 @@ async def process_articles():
   timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
   save_articles(articles_in_kirundi, os.path.join(STORAGE_DIR, f'articles_in_kirundi_{timestamp}.json'))
   save_articles(articles_not_in_kirundi, os.path.join(STORAGE_DIR, f'articles_not_in_kirundi_{timestamp}.json'))
-
 
 if __name__ == "__main__":
   asyncio.run(process_articles())
