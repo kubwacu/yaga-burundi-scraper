@@ -1,12 +1,18 @@
 import json
+import os
+import requests
 
 import requests
 import markdownify
 
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 def get_kirundi_article_urls():
@@ -20,6 +26,14 @@ def get_kirundi_article_urls():
   except Exception as e:
     print(f"Error reading articles file: {e}")
     return []
+
+def get_article_file_path(url: str):
+  current_dir = Path(__file__).parent
+  storage_dir = current_dir / "storage"
+  parsed_url = urlparse(url)
+  file_path = parsed_url.path.strip("/").replace("/", "_")  
+  file_path = storage_dir / f"yaga_burundi__{file_path}.md"
+  return file_path
 
 def get_article_content(url: str):
   headers = {
@@ -54,26 +68,50 @@ Category: {article['category']}
 ========================================
 
 {markdownify.markdownify(article_content)}"""
-  
-  current_dir = Path(__file__).parent
-  storage_dir = current_dir / "storage"
-  storage_dir.mkdir(exist_ok=True)
-  
-  parsed_url = urlparse(article["url"])
-  file_path = parsed_url.path.strip("/").replace("/", "_")  
-  file_path = storage_dir / f"yaga_burundi__{file_path}.md"
+  file_path = get_article_file_path(article["url"])
   with open(file_path, "w", encoding="utf-8") as f:
     f.write(markdown_content)
     print(f"Article {article['url']} processed and saved")
+    return file_path
 
-def upload_article_content(article_content: str, article: dict):
-  pass
+def upload_article_content(file_path: Path, article: dict):
+  upload_url = os.getenv('UPLOAD_URL')
+  
+  try:
+    form_data = {
+      'contributor_id': os.getenv('CONTRIBUTOR_ID'),
+      'title': article['title'],
+      'author': article.get('author', 'Unknown'),
+      'source': article.get('source', 'Yaga Burundi'),
+      'date': datetime.now().strftime('%Y-%m-%dT%H:%M:%SZ'),
+      'category': article.get('category', 'News'),
+    }
+
+    with open(file_path, 'rb') as f:
+      files = {
+        'file': (file_path.name, f, 'text/markdown')
+      }
+   
+      response = requests.post(upload_url, data=form_data, files=files)
+
+    if response.status_code == 201:
+      print(f"Successfully uploaded article: {article['url']}")
+      return True
+    elif response.status_code == 208:
+      print(f"Article already uploaded: {article['url']}")
+      return False
+    else:
+      print(f"Failed to upload article: {article['url']}")
+      print(f"Status code: {response.status_code}")
+      print(f"Response: {response.text}")
+      return False
+
+  except Exception as e:
+    print(f"Error uploading article: {str(e)}")
+    return False
 
 def is_already_processed(url: str):
-  current_dir = Path(__file__).parent
-  storage_dir = current_dir / "storage"
-  parsed_url = urlparse(url)
-  file_path = storage_dir / f"yaga_burundi__{parsed_url.path.strip("/").replace("/", "_")}.md"
+  file_path = get_article_file_path(url)
   
   if not file_path.exists():
     return False
@@ -96,11 +134,12 @@ def process_articles():
   
   for article in articles:
     url = article["url"]
+    file_path = get_article_file_path(url)
     if not is_already_processed(url):
       article_content = get_article_content(url)
       save_article_content(article_content, article)
       
-    # upload_article_content(article_content, article)
+    upload_article_content(file_path, article)
 
 if __name__ == "__main__":
   process_articles()
